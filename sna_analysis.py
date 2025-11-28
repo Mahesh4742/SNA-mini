@@ -143,21 +143,23 @@ def build_traffic_graph(df: pd.DataFrame) -> nx.Graph:
     if not {"CITY 1", "CITY 2"}.issubset(df.columns):
         raise ValueError("DataFrame must contain 'CITY 1' and 'CITY 2' columns.")
 
+    working_df = df.reset_index(drop=True)
+
     # Compute total passengers if the columns are available
     to_col = "PASSENGERS TO CITY 2"
     from_col = "PASSENGERS FROM CITY 2"
 
     total_passengers = None
-    if to_col in df.columns and from_col in df.columns:
-        total_passengers = df[to_col].fillna(0) + df[from_col].fillna(0)
-    elif to_col in df.columns:
-        total_passengers = df[to_col].fillna(0)
-    elif from_col in df.columns:
-        total_passengers = df[from_col].fillna(0)
+    if to_col in working_df.columns and from_col in working_df.columns:
+        total_passengers = working_df[to_col].fillna(0) + working_df[from_col].fillna(0)
+    elif to_col in working_df.columns:
+        total_passengers = working_df[to_col].fillna(0)
+    elif from_col in working_df.columns:
+        total_passengers = working_df[from_col].fillna(0)
 
     G = nx.Graph()
 
-    for idx, row in df.iterrows():
+    for idx, row in working_df.iterrows():
         city1 = row["CITY 1"]
         city2 = row["CITY 2"]
         if pd.isna(city1) or pd.isna(city2):

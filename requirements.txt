@@ -1,0 +1,8 @@
+altair
+matplotlib
+networkx
+openpyxl
+pandas
+streamlit
+
+

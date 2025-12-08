@@ -5,7 +5,9 @@ import altair as alt
 import matplotlib.pyplot as plt
 import networkx as nx
 import pandas as pd
+from pyvis.network import Network
 import streamlit as st
+import streamlit.components.v1 as components
 
 from sna_analysis import (
     DATA_DIR,
@@ -232,6 +234,88 @@ def build_network_graph_figure(
     return fig
 
 
+def build_interactive_network_html(
+    G: nx.Graph,
+    centrality_df: pd.DataFrame,
+    title: str,
+    max_edges: int,
+) -> str | None:
+    """Build an interactive PyVis network (zoom + drag)."""
+    if G.number_of_nodes() == 0 or G.number_of_edges() == 0:
+        return None
+
+    working_graph = G.copy()
+    if max_edges and working_graph.number_of_edges() > max_edges:
+        sorted_edges = sorted(
+            working_graph.edges(data=True),
+            key=lambda edge: edge[2].get("weight", 1.0),
+            reverse=True,
+        )
+        working_graph = nx.Graph()
+        for u, v, data in sorted_edges[:max_edges]:
+            working_graph.add_edge(u, v, **data)
+
+    working_graph.remove_nodes_from(list(nx.isolates(working_graph)))
+    if working_graph.number_of_nodes() == 0:
+        return None
+
+    centrality_subset = centrality_df.reindex(working_graph.nodes()).fillna(0)
+    degree_map = centrality_subset["Degree Centrality"].to_dict()
+    betweenness_map = centrality_subset["Betweenness Centrality"].to_dict()
+
+    if working_graph.number_of_nodes() <= 80:
+        pos = nx.kamada_kawai_layout(working_graph, weight="weight")
+    else:
+        pos = nx.spring_layout(
+            working_graph, weight="weight", k=0.3, iterations=200, seed=42
+        )
+
+    net = Network(
+        height="750px",
+        width="100%",
+        bgcolor="#ffffff",
+        font_color="#2c3e50",
+        directed=False,
+        notebook=False,
+        cdn_resources="remote",
+    )
+    net.barnes_hut()
+
+    for node in working_graph.nodes():
+        net.add_node(
+            node,
+            label=node.title(),
+            value=degree_map.get(node, 0.0),
+            size=max(betweenness_map.get(node, 0.0), 1e-5) * 120,
+            x=float(pos[node][0]) * 1000,
+            y=float(pos[node][1]) * 1000,
+            physics=True,
+            color=None,
+        )
+
+    for u, v, data in working_graph.edges(data=True):
+        weight = data.get("weight", 1.0)
+        net.add_edge(u, v, value=weight, width=0.5 + weight * 2)
+
+    net.set_options(
+        """
+        {
+          "interaction": { "dragNodes": true, "zoomView": true, "dragView": true },
+          "physics": {
+            "stabilization": true,
+            "barnesHut": { "springLength": 90, "damping": 0.2 }
+          },
+          "nodes": { "shape": "dot", "scaling": { "min": 3, "max": 60 } },
+          "edges": { "color": "#7f8c8d", "smooth": false }
+        }
+        """
+    )
+
+    # Heading is already shown in Streamlit; avoid double titles in the embed
+    net.heading = ""
+    return net.generate_html(notebook=False)
+
+
 def _compute_edge_widths(graph: nx.Graph) -> List[float]:
     weights = [data.get("weight", 1.0) for _, _, data in graph.edges(data=True)]
     if not weights:
@@ -387,9 +471,11 @@ def main() -> None:
         if network_type == "Domestic" and selected_zone != "All"
         else f"{network_type} Network Graph"
     )
-    graph_fig = build_network_graph_figure(G, centrality_df, graph_title, max_edges_display)
-    if graph_fig is not None:
-        st.pyplot(graph_fig, use_container_width=True)
+    interactive_html = build_interactive_network_html(
+        G, centrality_df, graph_title, max_edges_display
+    )
+    if interactive_html is not None:
+        components.html(interactive_html, height=780, scrolling=True)
     else:
         st.info("Unable to generate network graph for the current selection.")
 
